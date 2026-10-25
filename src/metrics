@@ -1,0 +1,51 @@
+"""
+Metric evaluation routines for contextual semantic projection and information surprisal.
+"""
+
+import math
+from typing import Dict, List, Tuple
+import numpy as np
+
+
+def compute_token_surprisal(token_id: int, logits_at_step: np.ndarray) -> float:
+    """
+    Computes information-theoretic surprisal S(w) = -log2 P(w | context).
+    Stable softmax calculation via max-subtraction.
+    """
+    shift = logits_at_step - np.max(logits_at_step)
+    exp_logits = np.exp(shift)
+    probs = exp_logits / np.sum(exp_logits)
+    prob_w = float(probs[token_id])
+    if prob_w <= 1e-12:
+        return 40.0  # Cap extreme float underflows
+    return -math.log2(prob_w)
+
+
+def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
+    """Cosine similarity between two 1D vectors."""
+    n1 = np.linalg.norm(v1)
+    n2 = np.linalg.norm(v2)
+    if n1 == 0.0 or n2 == 0.0:
+        return 0.0
+    return float(np.dot(v1, v2) / (n1 * n2))
+
+
+def aggregate_audit_scores(records: List[Dict]) -> Tuple[float, float, float]:
+    """
+    Calculates overall benchmark statistics:
+    - Anachronistic Error Rate (AER): fraction where modern bias exceeds historical truth
+    - Mean delta projection: (sim_modern - sim_historical)
+    - Mean conditional surprisal
+    """
+    if not records:
+        return 0.0, 0.0, 0.0
+
+    errors = [1.0 if r["is_anachronistic"] else 0.0 for r in records]
+    deltas = [r["delta_projection"] for r in records]
+    surprisals = [r["surprisal_bits"] for r in records]
+
+    aer = float(np.mean(errors))
+    mean_delta = float(np.mean(deltas))
+    mean_surprisal = float(np.mean(surprisals))
+
+    return aer, mean_delta, mean_surprisal
